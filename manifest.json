@@ -1,0 +1,15 @@
+{
+  "name": "NBA 上帝模式",
+  "short_name": "上帝模式",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2950/2950992.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
