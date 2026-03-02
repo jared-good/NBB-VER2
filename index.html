@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="manifest.json">
+    <title>NBA 上帝模式 Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; background-color: #000; color: #fff; padding: 10px; margin: 0; min-height: 100vh; box-sizing: border-box; }
+        .card { background: #1a1a1a; padding: 15px; border-radius: 12px; margin-bottom: 12px; border: 1px solid #333; }
+        .card-gold { border: 1px solid #f39c12; box-shadow: 0 0 10px rgba(243,156,18,0.2); }
+        h2 { color: #f39c12; margin: 0 0 10px 0; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .bankroll { font-size: 26px; font-weight: bold; color: #2ecc71; text-align: center; margin: 5px 0; }
+        .progress-bg { background: #333; border-radius: 8px; height: 16px; margin-top: 8px; position: relative; overflow: hidden; }
+        .progress-fill { background: linear-gradient(90deg, #f39c12, #f1c40f); height: 100%; width: 0%; transition: 0.5s; }
+        .progress-text { position: absolute; width: 100%; text-align: center; font-size: 11px; line-height: 16px; font-weight: bold; color: #fff; z-index: 2; }
+        input, select, button { width: 100%; padding: 12px; margin-top: 8px; border-radius: 6px; border: none; font-size: 16px; box-sizing: border-box; }
+        input { background: #262626; color: #fff; border: 1px solid #444; }
+        button { background: #f39c12; color: #000; font-weight: bold; cursor: pointer; }
+        .btn-small { background: #34495e; color: #eee; font-size: 12px; margin-top: 8px; padding: 10px; border-radius: 6px; flex: 1; text-align: center; cursor: pointer; }
+        table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 12px; }
+        td { padding: 10px 4px; border-bottom: 1px solid #222; }
+        .win { color: #2ecc71; } .lose { color: #e74c3c; }
+        canvas { max-height: 200px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>💰 真實資金庫 <button onclick="setBase()" style="width:auto;padding:4px 8px;font-size:10px;margin:0;background:#444;color:#fff;">設定</button></h2>
+        <div class="bankroll" id="bankrollDisplay">0.0 u</div>
+    </div>
+
+    <div class="card card-gold">
+        <h2>🎯 本週 300u 目標進度</h2>
+        <div class="progress-bg"><div class="progress-text" id="weekProgressText">0 / 300u</div><div class="progress-fill" id="weekBar"></div></div>
+    </div>
+
+    <div class="card">
+        <h2>📈 資金水位走勢</h2>
+        <canvas id="trendChart"></canvas>
+    </div>
+
+    <div class="card">
+        <h2>✍️ 操盤記錄 (固定 20u 均注)</h2>
+        <input type="text" id="name" placeholder="賽事名稱">
+        <select id="res">
+            <option value="17.6">勝 (+17.6u)</option>
+            <option value="-20">負 (-20u)</option>
+            <option value="0">走 (0u)</option>
+        </select>
+        <button onclick="save()">💾 保存結果</button>
+        <div style="display:flex;gap:5px;">
+            <div class="btn-small" onclick="autoFetch()" style="background:#8e44ad;">🔄 自動抓取今日賽事</div>
+            <div class="btn-small" onclick="importData()">導入代碼</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <table><tbody id="list"></tbody></table>
+        <button onclick="if(confirm('重置？')){localStorage.clear();location.reload();}" style="background:transparent;color:#555;font-size:10px;margin-top:15px;">🗑️ 重置所有數據</button>
+    </div>
+
+    <script>
+        let logs = JSON.parse(localStorage.getItem('nba_v7')) || [];
+        let baseMoney = parseFloat(localStorage.getItem('nba_base_v7')) || 1500;
+        let chartInstance = null;
+
+        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
+
+        function setBase() { let m = prompt("輸入初始本金:", baseMoney); if(m !== null && !isNaN(m)) { baseMoney = parseFloat(m); localStorage.setItem('nba_base_v7', baseMoney); render(); } }
+        function getMonday(d) { d = new Date(d); var day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6:1); return new Date(d.setDate(diff)).setHours(0,0,0,0); }
+
+        function drawChart() {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            let chartLabels = ['起點'];
+            let chartData = [baseMoney];
+            let current = baseMoney;
+            
+            [...logs].reverse().forEach(l => {
+                current += l.p;
+                chartLabels.push(new Date(l.date).getMonth()+1 + '/' + new Date(l.date).getDate());
+                chartData.push(current);
+            });
+
+            if(chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: chartLabels, datasets: [{ label: '資金水位', data: chartData, borderColor: '#f39c12', backgroundColor: 'rgba(243, 156, 18, 0.2)', borderWidth: 2, fill: true, pointRadius: 3 }] },
+                options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { color: '#333' }, ticks: { color: '#888' } } } }
+            });
+        }
+
+        function render() {
+            let t = 0, allP = 0, weekP = 0; const mon = getMonday(new Date());
+            const tbody = document.getElementById('list'); tbody.innerHTML = '';
+
+            logs.forEach((l, i) => {
+                let ld = new Date(l.date); allP += l.p;
+                if(ld >= mon) weekP += l.p;
+                tbody.innerHTML += `<tr><td>${ld.getMonth()+1}/${ld.getDate()}</td><td>${l.n}</td><td class="${l.p>0?'win':(l.p<0?'lose':'')}">${l.p>0?'+'+l.p:l.p}</td><td><button onclick="del(${i})" style="background:none;border:none;color:#888;font-size:16px;">×</button></td></tr>`;
+            });
+
+            document.getElementById('bankrollDisplay').innerText = (baseMoney + allP).toFixed(1) + ' u';
+            document.getElementById('weekProgressText').innerText = weekP.toFixed(1) + ' / 300u';
+            document.getElementById('weekBar').style.width = Math.min(Math.max(0, (weekP/300)*100), 100) + '%';
+            if(weekP >= 300) confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+            
+            drawChart();
+            localStorage.setItem('nba_v7', JSON.stringify(logs));
+        }
+
+        function save() { const n = document.getElementById('name').value; const p = parseFloat(document.getElementById('res').value); if(!n) return; logs.unshift({n, p, date: new Date().toISOString()}); render(); document.getElementById('name').value=''; }
+        function del(i) { if(confirm('刪除？')){logs.splice(i,1); render();} }
+        function importData() { const r = prompt("貼上 AI 代碼："); if(r){ try{ const d=JSON.parse(r).map(x=>({...x, date:new Date().toISOString()})); logs=d.concat(logs); render(); }catch(e){alert("格式錯誤");} } }
+        
+        function autoFetch() {
+            fetch('matches.json').then(r => r.json()).then(data => {
+                const d = data.map(x => ({...x, date: new Date().toISOString()}));
+                logs = d.concat(logs); render(); alert("✅ 今日賽事已自動載入！");
+            }).catch(e => {
+                alert("尚未建立 matches.json，請先用手動導入代碼。");
+            });
+        }
+
+        render();
+    </script>
+</body>
+</html>
